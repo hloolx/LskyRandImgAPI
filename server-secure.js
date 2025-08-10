@@ -806,9 +806,8 @@ app.get('/api/random/:apiKey', async (req, res) => {
     let selectedImage;
     
     if (mode === 'sequence') {
-      // 顺序模式：使用页码实现顺序访问
-      const page = ((apiInfo.use_count || 0) % (apiInfo.image_count || 1)) + 1;
-      const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
+      // 顺序模式：先获取总数，然后按顺序访问
+      const firstResponse = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json'
@@ -816,22 +815,53 @@ app.get('/api/random/:apiKey', async (req, res) => {
         params: {
           albumId: apiInfo.album_id,
           per_page: 1,
-          page: page
+          page: 1
         },
         proxy: false,
         maxRedirects: 5,
         timeout: 5000
       });
       
-      const images = response.data?.data?.data || [];
-      if (images.length > 0) {
-        selectedImage = images[0].links.url;
+      const total = firstResponse.data?.data?.total || 0;
+      const totalPages = firstResponse.data?.data?.last_page || 1;
+      
+      if (total === 0) {
+        return res.status(404).json({ error: '相册中没有图片' });
+      }
+      
+      // 计算顺序页码（循环）
+      const page = ((apiInfo.use_count || 0) % totalPages) + 1;
+      
+      if (page === 1) {
+        // 使用已获取的第一页数据
+        const images = firstResponse.data?.data?.data || [];
+        if (images.length > 0) {
+          selectedImage = images[0].links.url;
+        }
+      } else {
+        // 获取指定页
+        const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          params: {
+            albumId: apiInfo.album_id,
+            per_page: 1,
+            page: page
+          },
+          proxy: false,
+          maxRedirects: 5,
+          timeout: 5000
+        });
+        
+        const images = response.data?.data?.data || [];
+        if (images.length > 0) {
+          selectedImage = images[0].links.url;
+        }
       }
     } else {
-      // 随机模式：使用随机页码
-      const totalImages = apiInfo.image_count || 1;
-      const randomPage = Math.floor(Math.random() * totalImages) + 1;
-      
+      // 随机模式：先获取总数，然后随机选择
       const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -840,16 +870,50 @@ app.get('/api/random/:apiKey', async (req, res) => {
         params: {
           albumId: apiInfo.album_id,
           per_page: 1,
-          page: randomPage
+          page: 1  // 先获取第一页，同时获得total
         },
         proxy: false,
         maxRedirects: 5,
         timeout: 5000
       });
       
-      const images = response.data?.data?.data || [];
-      if (images.length > 0) {
-        selectedImage = images[0].links.url;
+      const total = response.data?.data?.total || 0;
+      const totalPages = response.data?.data?.last_page || 1;
+      
+      if (total === 0) {
+        return res.status(404).json({ error: '相册中没有图片' });
+      }
+      
+      // 随机选择一个有效的页码（1到totalPages之间）
+      const randomPage = Math.floor(Math.random() * totalPages) + 1;
+      
+      // 如果不是第一页，重新请求随机页
+      if (randomPage !== 1) {
+        const randomResponse = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          },
+          params: {
+            albumId: apiInfo.album_id,
+            per_page: 1,
+            page: randomPage
+          },
+          proxy: false,
+          maxRedirects: 5,
+          timeout: 5000
+        });
+        
+        const randomImages = randomResponse.data?.data?.data || [];
+        if (randomImages.length > 0) {
+          selectedImage = randomImages[0].links.url;
+        }
+      } else {
+        // 使用第一页的结果
+        const images = response.data?.data?.data || [];
+        if (images.length > 0) {
+          selectedImage = images[0].links.url;
+        }
       }
     }
     
