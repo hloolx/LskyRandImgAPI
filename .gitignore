@@ -10,3 +10,4 @@ vue-simple/.claude/
 vue-simple/dist/
 database.db
 *.db
+*.bat
