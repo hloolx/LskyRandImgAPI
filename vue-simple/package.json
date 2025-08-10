@@ -1,7 +1,9 @@
 {
-  "name": "lsky-api-simple",
+  "name": "lsky-api-frontend",
   "version": "1.0.0",
-  "description": "兰空图床随机图片API管理系统（简化版）",
+  "description": "兰空图床随机图片API前端界面",
+  "license": "MIT",
+  "author": "hloolx <hloolmz@qq.com>",
   "private": true,
   "type": "module",
   "scripts": {

@@ -69,22 +69,41 @@
           
           <!-- 调用方式说明 -->
           <div class="api-modes">
-            <div class="api-mode-title">📖 调用方式：</div>
+            <div class="api-mode-title">
+              📖 调用方式：
+              <span class="mode-help" @mouseenter="showModeHelp = api.id" @mouseleave="showModeHelp = null">
+                ❓
+                <div class="mode-help-tooltip" v-show="showModeHelp === api.id">
+                  <div class="mode-help-item">
+                    <strong>🎲 模式1 - 纯随机（默认）</strong>
+                    <p>完全随机选择图片，每次都是独立的随机</p>
+                  </div>
+                  <div class="mode-help-item">
+                    <strong>🔄 模式2 - 顺序随机</strong>
+                    <p>不重复随机，直到所有图片都显示过一次才重新开始</p>
+                  </div>
+                  <div class="mode-help-item">
+                    <strong>🎰 模式3 - 洗牌随机</strong>
+                    <p>生成固定的随机序列，每轮按相同顺序显示</p>
+                  </div>
+                </div>
+              </span>
+            </div>
             <div class="api-mode-list">
               <div class="api-mode-item">
-                <span class="mode-label">默认随机：</span>
-                <code class="mode-code">{{ api.api_url }}</code>
-                <button class="btn-copy-small" @click="copyModeUrl(api.api_url, '默认')" title="复制">📋</button>
+                <span class="mode-label">🎲 纯随机：</span>
+                <code class="mode-code">{{ api.api_url }}?1</code>
+                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?1', '纯随机')" title="复制">📋</button>
               </div>
               <div class="api-mode-item">
-                <span class="mode-label">顺序循环：</span>
-                <code class="mode-code">{{ api.api_url }}?mode=sequence</code>
-                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?mode=sequence', '顺序')" title="复制">📋</button>
+                <span class="mode-label">🔄 顺序随机：</span>
+                <code class="mode-code">{{ api.api_url }}?2</code>
+                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?2', '顺序随机')" title="复制">📋</button>
               </div>
               <div class="api-mode-item">
-                <span class="mode-label">均匀随机：</span>
-                <code class="mode-code">{{ api.api_url }}?mode=shuffle</code>
-                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?mode=shuffle', '均匀')" title="复制">📋</button>
+                <span class="mode-label">🎰 洗牌随机：</span>
+                <code class="mode-code">{{ api.api_url }}?3</code>
+                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?3', '洗牌随机')" title="复制">📋</button>
               </div>
             </div>
           </div>
@@ -219,6 +238,7 @@ const showStatsModal = ref(false)
 const currentStats = ref(null)
 const statsLoading = ref(false)
 const apisLoading = ref(false)  // 添加API列表加载状态
+const showModeHelp = ref(null)  // 模式帮助提示
 
 const user = computed(() => {
   const userStr = localStorage.getItem('user')
@@ -436,21 +456,23 @@ onMounted(() => {
 
 .stat-card {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 123, 255, 0.1);
   border-radius: 10px;
   padding: 20px;
   text-align: center;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
 }
 
 .stat-value {
   font-size: 2em;
   font-weight: bold;
-  color: var(--color-primary);
+  color: #007bff;
   margin-bottom: 10px;
 }
 
 .stat-label {
-  color: rgba(255, 255, 255, 0.7);
+  color: #6c757d;
   font-size: 0.9em;
 }
 
@@ -460,11 +482,13 @@ onMounted(() => {
 
 .stats-section h3 {
   margin-bottom: 15px;
-  color: rgba(255, 255, 255, 0.9);
+  color: #333;
+  font-weight: 600;
 }
 
 .daily-stats {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 123, 255, 0.1);
   border-radius: 10px;
   padding: 15px;
 }
@@ -473,7 +497,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   padding: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 123, 255, 0.1);
 }
 
 .day-stat:last-child {
@@ -481,16 +505,17 @@ onMounted(() => {
 }
 
 .day-date {
-  color: rgba(255, 255, 255, 0.8);
+  color: #6c757d;
 }
 
 .day-count {
-  color: var(--color-primary);
+  color: #007bff;
   font-weight: bold;
 }
 
 .access-logs {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 123, 255, 0.1);
   border-radius: 10px;
   padding: 15px;
   max-height: 300px;
@@ -499,7 +524,7 @@ onMounted(() => {
 
 .log-item {
   padding: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid rgba(0, 123, 255, 0.1);
 }
 
 .log-item:last-child {
@@ -507,13 +532,14 @@ onMounted(() => {
 }
 
 .log-time {
-  color: var(--color-primary);
+  color: #007bff;
   font-size: 0.9em;
   margin-bottom: 5px;
+  font-weight: 500;
 }
 
 .log-details {
-  color: rgba(255, 255, 255, 0.6);
+  color: #6c757d;
   font-size: 0.85em;
 }
 
@@ -524,8 +550,8 @@ onMounted(() => {
 .loading-spinner {
   width: 50px;
   height: 50px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top: 3px solid var(--color-primary);
+  border: 3px solid rgba(0, 123, 255, 0.1);
+  border-top: 3px solid #007bff;
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto;
@@ -546,5 +572,61 @@ onMounted(() => {
 .loading-state p {
   margin-top: 20px;
   font-size: 1.1em;
+}
+
+/* 模式帮助样式 */
+.mode-help {
+  display: inline-block;
+  position: relative;
+  cursor: help;
+  margin-left: 8px;
+  font-size: 0.9em;
+  color: var(--color-primary);
+}
+
+.mode-help:hover {
+  transform: scale(1.1);
+}
+
+.mode-help-tooltip {
+  position: absolute;
+  left: 100%;
+  top: -10px;
+  margin-left: 10px;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(0, 123, 255, 0.2);
+  border-radius: 12px;
+  padding: 15px;
+  width: 320px;
+  z-index: 1000;
+  box-shadow: 0 4px 20px rgba(0, 123, 255, 0.15);
+  backdrop-filter: blur(10px);
+}
+
+.mode-help-item {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 123, 255, 0.1);
+}
+
+.mode-help-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.mode-help-item strong {
+  display: block;
+  color: #007bff;
+  margin-bottom: 5px;
+  font-size: 0.95em;
+  font-weight: 600;
+}
+
+.mode-help-item p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 0.85em;
+  line-height: 1.4;
 }
 </style>

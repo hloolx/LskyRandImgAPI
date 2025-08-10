@@ -3,6 +3,19 @@
   "version": "1.0.0",
   "description": "兰空图床随机图片API管理系统",
   "main": "server-secure.js",
+  "license": "MIT",
+  "author": "hloolx <hloolmz@qq.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hloolx/LskyRandImgAPI.git"
+  },
+  "keywords": [
+    "lsky",
+    "image-api",
+    "random-image",
+    "vue",
+    "nodejs"
+  ],
   "scripts": {
     "start": "node server-secure.js",
     "dev": "nodemon server-secure.js",

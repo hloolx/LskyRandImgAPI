@@ -2,9 +2,21 @@
   <div class="login-page">
     <div class="login-card">
       <div class="login-header">
-        <div class="login-logo">📷</div>
+        <img src="/favicon.ico" class="login-logo" alt="Logo" />
         <h1 class="login-title">LskyPro API</h1>
         <p class="login-subtitle">随机图片 API 管理系统</p>
+      </div>
+      <div class="security-notice">
+        <div class="notice-icon">⚠️</div>
+        <div class="notice-content">
+          <strong>安全提示</strong>
+          <p>本项目为开源项目，请自行部署使用。本站不保证数据的安全性。</p>
+          <div class="github-links">
+            <a href="https://github.com/hloolx/LskyRandImgAPI" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <span>|</span>
+            <a href="https://cnb.cool/hloolx/LskyRandImgAPI" target="_blank" rel="noopener noreferrer">CNB镜像</a>
+          </div>
+        </div>
       </div>
       <form @submit.prevent="handleLogin">
         <div class="form-group">
@@ -14,10 +26,11 @@
             class="form-input" 
             v-model="form.lskyHost"
             placeholder="https://your-lsky-domain.com"
+            @blur="formatHost"
             required
           >
           <div class="form-hint">
-            请输入您的兰空图床完整地址
+            请输入您的兰空图床完整地址（末尾不需要加 /）
           </div>
         </div>
         <div class="form-group">
@@ -55,7 +68,15 @@ const form = reactive({
 })
 const loading = ref(false)
 
+// 自动去除地址末尾的斜杠
+const formatHost = () => {
+  if (form.lskyHost.endsWith('/')) {
+    form.lskyHost = form.lskyHost.slice(0, -1)
+  }
+}
+
 const handleLogin = async () => {
+  formatHost() // 登录前再次格式化
   loading.value = true
   try {
     const result = await api.login(form.lskyHost, form.token)

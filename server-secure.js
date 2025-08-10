@@ -1,3 +1,13 @@
+/**
+ * 兰空图床随机图片API系统
+ * 
+ * @description 基于兰空图床的随机图片API管理系统
+ * @author hloolx <hloolmz@qq.com>
+ * @license MIT
+ * @copyright Copyright (c) 2024 hloolx
+ * @repository https://github.com/hloolx/LskyRandImgAPI
+ */
+
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
@@ -255,6 +265,27 @@ db.serialize(() => {
   db.run(`ALTER TABLE random_apis ADD COLUMN last_synced DATETIME`, (err) => {
     if (err && !err.message.includes('duplicate column')) {
       console.log('last_synced字段已存在或添加失败:', err.message);
+    }
+  });
+  
+  // 添加字段记录顺序随机状态
+  db.run(`ALTER TABLE random_apis ADD COLUMN shown_indices TEXT DEFAULT '[]'`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.log('shown_indices字段已存在或添加失败:', err.message);
+    }
+  });
+  
+  // 添加字段记录洗牌顺序
+  db.run(`ALTER TABLE random_apis ADD COLUMN shuffle_order TEXT DEFAULT '[]'`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.log('shuffle_order字段已存在或添加失败:', err.message);
+    }
+  });
+  
+  // 添加洗牌位置索引
+  db.run(`ALTER TABLE random_apis ADD COLUMN shuffle_index INTEGER DEFAULT 0`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.log('shuffle_index字段已存在或添加失败:', err.message);
     }
   });
 
@@ -774,10 +805,20 @@ function getRandomImage(images, apiKey, ipAddress) {
   return images[index];
 }
 
-// 随机图片API（公开访问，实时获取）
+// Fisher-Yates洗牌算法
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
+// 随机图片API（支持三种模式）
 app.get('/api/random/:apiKey', async (req, res) => {
   const { apiKey } = req.params;
-  const { mode } = req.query; // 支持不同的随机模式
+  const mode = req.query['1'] ? 1 : req.query['2'] ? 2 : req.query['3'] ? 3 : 1; // 默认模式1
 
   try {
     // 获取API信息和用户信息
@@ -802,67 +843,100 @@ app.get('/api/random/:apiKey', async (req, res) => {
     // 解密token
     const token = apiInfo.token_encrypted ? decrypt(apiInfo.token_encrypted) : apiInfo.token;
     
-    // 实时从Lsky获取图片
-    let selectedImage;
+    // 先获取相册图片总数和信息
+    const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      },
+      params: {
+        albumId: apiInfo.album_id,
+        per_page: 1,
+        page: 1
+      },
+      proxy: false,
+      maxRedirects: 5,
+      timeout: 5000
+    });
     
-    if (mode === 'sequence') {
-      // 顺序模式：先获取总数，然后按顺序访问
-      const firstResponse = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        },
-        params: {
-          albumId: apiInfo.album_id,
-          per_page: 1,
-          page: 1
-        },
-        proxy: false,
-        maxRedirects: 5,
-        timeout: 5000
-      });
+    const total = response.data?.data?.total || 0;
+    const totalPages = response.data?.data?.last_page || 1;
+    
+    if (total === 0) {
+      return res.status(404).json({ error: '相册中没有图片' });
+    }
+    
+    let selectedImage;
+    let selectedPage;
+    
+    if (mode === 1) {
+      // 模式1：纯随机（默认）
+      selectedPage = Math.floor(Math.random() * totalPages) + 1;
       
-      const total = firstResponse.data?.data?.total || 0;
-      const totalPages = firstResponse.data?.data?.last_page || 1;
+    } else if (mode === 2) {
+      // 模式2：顺序随机（不重复直到全部显示）
+      let shownIndices = JSON.parse(apiInfo.shown_indices || '[]');
       
-      if (total === 0) {
-        return res.status(404).json({ error: '相册中没有图片' });
+      // 如果已经显示完所有图片，重置
+      if (shownIndices.length >= totalPages) {
+        shownIndices = [];
+        db.run('UPDATE random_apis SET shown_indices = ? WHERE api_key = ?', ['[]', apiKey]);
       }
       
-      // 计算顺序页码（循环）
-      const page = ((apiInfo.use_count || 0) % totalPages) + 1;
+      // 找出未显示的页码
+      const availablePages = [];
+      for (let i = 1; i <= totalPages; i++) {
+        if (!shownIndices.includes(i)) {
+          availablePages.push(i);
+        }
+      }
       
-      if (page === 1) {
-        // 使用已获取的第一页数据
-        const images = firstResponse.data?.data?.data || [];
-        if (images.length > 0) {
-          selectedImage = images[0].links.url;
+      // 从未显示的页码中随机选择
+      selectedPage = availablePages[Math.floor(Math.random() * availablePages.length)];
+      
+      // 更新已显示列表
+      shownIndices.push(selectedPage);
+      db.run('UPDATE random_apis SET shown_indices = ? WHERE api_key = ?', 
+        [JSON.stringify(shownIndices), apiKey]);
+      
+    } else if (mode === 3) {
+      // 模式3：洗牌随机（固定顺序的随机序列）
+      let shuffleOrder = JSON.parse(apiInfo.shuffle_order || '[]');
+      let shuffleIndex = apiInfo.shuffle_index || 0;
+      
+      // 如果没有洗牌顺序或已经走完一轮，重新洗牌
+      if (shuffleOrder.length === 0 || shuffleIndex >= shuffleOrder.length) {
+        // 创建页码数组并洗牌
+        const pageArray = [];
+        for (let i = 1; i <= totalPages; i++) {
+          pageArray.push(i);
         }
-      } else {
-        // 获取指定页
-        const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          },
-          params: {
-            albumId: apiInfo.album_id,
-            per_page: 1,
-            page: page
-          },
-          proxy: false,
-          maxRedirects: 5,
-          timeout: 5000
-        });
+        shuffleOrder = shuffleArray(pageArray);
+        shuffleIndex = 0;
         
-        const images = response.data?.data?.data || [];
-        if (images.length > 0) {
-          selectedImage = images[0].links.url;
-        }
+        // 保存洗牌顺序
+        db.run('UPDATE random_apis SET shuffle_order = ?, shuffle_index = 0 WHERE api_key = ?', 
+          [JSON.stringify(shuffleOrder), apiKey]);
+      }
+      
+      // 获取当前应该显示的页码
+      selectedPage = shuffleOrder[shuffleIndex];
+      
+      // 更新索引位置
+      db.run('UPDATE random_apis SET shuffle_index = ? WHERE api_key = ?', 
+        [shuffleIndex + 1, apiKey]);
+    }
+    
+    // 获取选定页的图片
+    if (selectedPage === 1) {
+      // 使用已经获取的第一页数据
+      const images = response.data?.data?.data || [];
+      if (images.length > 0) {
+        selectedImage = images[0].links.url;
       }
     } else {
-      // 随机模式：先获取总数，然后随机选择
-      const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
+      // 获取指定页的图片
+      const pageResponse = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json'
@@ -870,50 +944,16 @@ app.get('/api/random/:apiKey', async (req, res) => {
         params: {
           albumId: apiInfo.album_id,
           per_page: 1,
-          page: 1  // 先获取第一页，同时获得total
+          page: selectedPage
         },
         proxy: false,
         maxRedirects: 5,
         timeout: 5000
       });
       
-      const total = response.data?.data?.total || 0;
-      const totalPages = response.data?.data?.last_page || 1;
-      
-      if (total === 0) {
-        return res.status(404).json({ error: '相册中没有图片' });
-      }
-      
-      // 随机选择一个有效的页码（1到totalPages之间）
-      const randomPage = Math.floor(Math.random() * totalPages) + 1;
-      
-      // 如果不是第一页，重新请求随机页
-      if (randomPage !== 1) {
-        const randomResponse = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          },
-          params: {
-            albumId: apiInfo.album_id,
-            per_page: 1,
-            page: randomPage
-          },
-          proxy: false,
-          maxRedirects: 5,
-          timeout: 5000
-        });
-        
-        const randomImages = randomResponse.data?.data?.data || [];
-        if (randomImages.length > 0) {
-          selectedImage = randomImages[0].links.url;
-        }
-      } else {
-        // 使用第一页的结果
-        const images = response.data?.data?.data || [];
-        if (images.length > 0) {
-          selectedImage = images[0].links.url;
-        }
+      const images = pageResponse.data?.data?.data || [];
+      if (images.length > 0) {
+        selectedImage = images[0].links.url;
       }
     }
     
