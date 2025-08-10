@@ -28,13 +28,11 @@
 
 ## 二、部署方式
 
-### 快速部署（5分钟）
-
-#### 环境要求
+### 环境要求
 - Node.js 14.0+
 - npm 6.0+
 
-#### 本地部署
+### 本地部署
 ```bash
 # 1. 克隆项目
 git clone https://cnb.cool/hloolx/LskyRandImgAPI.git
@@ -58,89 +56,6 @@ npm start
 
 访问 `http://localhost:3000` 即可使用！
 
-#### Docker部署
-```bash
-# 方式一：Docker Compose（推荐）
-docker-compose up -d
-
-# 方式二：手动构建
-docker build -t random-image-api .
-docker run -d -p 3000:3000 random-image-api
-```
-
-### 云平台部署
-
-#### Heroku
-```bash
-# 登录并创建应用
-heroku login
-heroku create your-app-name
-
-# 设置容器部署
-heroku stack:set container
-
-# 配置环境变量
-heroku config:set ENCRYPT_SECRET=your-secret
-heroku config:set SESSION_SECRET=your-session
-
-# 部署
-git push heroku main
-```
-
-#### Railway
-```bash
-# 安装CLI并登录
-npm i -g @railway/cli
-railway login
-
-# 初始化并部署
-railway init
-railway up
-```
-
-#### Fly.io
-```bash
-# 安装CLI并登录
-curl -L https://fly.io/install.sh | sh
-fly auth login
-
-# 初始化并部署
-fly launch
-fly deploy
-```
-
-### 生产环境部署
-
-#### PM2进程管理
-```bash
-# 安装PM2
-npm install -g pm2
-
-# 启动应用
-pm2 start server-secure.js --name "random-image-api"
-
-# 设置开机自启
-pm2 startup
-pm2 save
-```
-
-#### Nginx反向代理
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
 ### 环境变量配置
 
 | 变量名 | 说明 | 必填 | 示例 |
@@ -148,7 +63,7 @@ server {
 | PORT | 服务端口 | 否 | 3000 |
 | ENCRYPT_SECRET | 数据加密密钥 | **是** | 32位随机字符串 |
 | SESSION_SECRET | Session密钥 | **是** | 32位随机字符串 |
-| CORS_ORIGINS | CORS白名单 | 否 | https://app.example.com |
+| CORS_ORIGINS | CORS白名单 | 否 | http://localhost:3000 |
 
 生成安全密钥：
 ```bash
@@ -192,8 +107,9 @@ cp database.db database.db.backup
 git pull
 npm run setup:build
 
-# 重启服务（PM2）
-pm2 restart random-image-api
+# 重启服务
+# Ctrl+C 停止后重新运行
+npm start
 ```
 
 ## 许可证
