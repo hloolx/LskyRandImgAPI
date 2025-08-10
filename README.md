@@ -56,6 +56,46 @@ npm start
 
 访问 `http://localhost:3000` 即可使用！
 
+### 长期运行后端服务
+
+由于前端已构建为静态文件（dist目录），后端需要持续运行来提供API服务。
+
+#### 方式一：PM2进程管理器（推荐）
+```bash
+# 安装PM2
+npm install -g pm2
+
+# 启动服务
+pm2 start server-secure.js --name "lsky-api"
+
+# 设置开机自启
+pm2 startup
+pm2 save
+
+# 常用命令
+pm2 status        # 查看状态
+pm2 logs          # 查看日志  
+pm2 restart lsky-api  # 重启服务
+pm2 stop lsky-api     # 停止服务
+```
+
+#### 方式二：宝塔面板Node项目
+如果使用宝塔面板，可以通过以下步骤：
+1. 在宝塔面板中创建Node项目
+2. 项目目录选择本项目根目录
+3. 启动文件选择 `server-secure.js`
+4. 端口设置为 `.env` 中配置的端口
+5. 点击启动即可保持后端持续运行
+
+#### 方式三：系统服务
+```bash
+# Linux后台运行
+nohup npm start > app.log 2>&1 &
+
+# Windows可使用 node-windows 创建系统服务
+npm install -g node-windows
+```
+
 ### 环境变量配置
 
 | 变量名 | 说明 | 必填 | 示例 |
