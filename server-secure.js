@@ -21,29 +21,25 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 定时任务：每天12点更新所有用户的API数据
+// 定时任务：每天夜间12点（0点）更新所有用户的API数据
 function scheduleDailyUpdate() {
   const now = new Date();
-  const noon = new Date();
-  noon.setHours(12, 0, 0, 0);
+  const midnight = new Date();
+  midnight.setHours(0, 0, 0, 0);
+  midnight.setDate(midnight.getDate() + 1); // 设置为下一个凌晨0点
   
-  // 如果已经过了今天的12点，设置为明天12点
-  if (now > noon) {
-    noon.setDate(noon.getDate() + 1);
-  }
-  
-  const msUntilNoon = noon - now;
+  const msUntilMidnight = midnight - now;
   
   // 设置定时器
   setTimeout(() => {
-    console.log('开始执行每日12点定时更新任务...');
+    console.log('开始执行每日凌晨0点定时更新任务...');
     updateAllUsersAPIs();
     
     // 设置下一天的定时任务
     setInterval(updateAllUsersAPIs, 24 * 60 * 60 * 1000);  // 每24小时执行一次
-  }, msUntilNoon);
+  }, msUntilMidnight);
   
-  console.log(`定时任务已设置，将在 ${new Date(noon).toLocaleString()} 执行`);
+  console.log(`定时任务已设置，将在 ${new Date(midnight).toLocaleString()} 执行`);
 }
 
 // 更新所有用户的API数据
@@ -84,32 +80,20 @@ async function updateAllUsersAPIs() {
           // 逐个更新（避免并发过多）
           for (const api of apis) {
             try {
-              const response = await axios.get(`${user.lsky_host}/api/v1/images`, {
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Accept': 'application/json'
-                },
-                params: {
-                  albumId: api.album_id,
-                  per_page: 1
-                },
-                proxy: false,
-                maxRedirects: 5,
-                timeout: 10000
-              });
+              // 获取所有图片
+              const allImages = await fetchAllAlbumImages(user.lsky_host, token, api.album_id);
+              const imageUrls = allImages.map(img => img.links.url);
               
-              const total = response.data?.data?.total || 0;
-              
-              // 更新数据库
+              // 更新数据库，包括图片列表
               db.run(
-                'UPDATE random_apis SET image_count = ?, last_synced = datetime("now") WHERE id = ?',
-                [total, api.id]
+                'UPDATE random_apis SET images = ?, image_count = ?, last_synced = datetime("now") WHERE id = ?',
+                [JSON.stringify(imageUrls), allImages.length, api.id]
               );
               
-              console.log(`✓ 更新API ${api.id}: ${total} 张图片`);
+              console.log(`✓ 更新API ${api.id}: ${allImages.length} 张图片`);
               
               // 延迟一下，避免请求过快
-              await new Promise(resolve => setTimeout(resolve, 500));
+              await new Promise(resolve => setTimeout(resolve, 1000));  // 增加延迟到1秒
             } catch (error) {
               console.error(`✗ 更新API ${api.id} 失败:`, error.message);
             }
@@ -253,6 +237,13 @@ db.serialize(() => {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)
   )`);
+  
+  // 添加images字段（如果不存在） - 用于存储图片URL列表
+  db.run(`ALTER TABLE random_apis ADD COLUMN images TEXT DEFAULT '[]'`, (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.log('images字段已存在或添加失败:', err.message);
+    }
+  });
   
   // 添加image_count字段（如果不存在）
   db.run(`ALTER TABLE random_apis ADD COLUMN image_count INTEGER DEFAULT 0`, (err) => {
@@ -645,33 +636,22 @@ app.post('/api/random-api/create', authMiddleware, apiLimiter, async (req, res) 
     // 解密token
     const token = user.token_encrypted ? decrypt(user.token_encrypted) : user.token;
     
-    // 只获取1张图片以获得总数
-    const response = await axios.get(`${user.lsky_host}/api/v1/images`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      },
-      params: {
-        albumId: albumId,
-        per_page: 1  // 只获取1张图片
-      },
-      proxy: false,
-      maxRedirects: 5,
-      timeout: 10000
-    });
-
-    const total = response.data?.data?.total || 0;
+    // 获取所有图片
+    const allImages = await fetchAllAlbumImages(user.lsky_host, token, albumId);
     
-    if (total === 0) {
+    if (allImages.length === 0) {
       return res.status(400).json({ error: '相册中没有图片' });
     }
+    
+    // 提取图片URL列表
+    const imageUrls = allImages.map(img => img.links.url);
 
     const apiKey = generateApiKey();
 
     db.run(
-      `INSERT INTO random_apis (user_id, album_id, api_key, api_name, image_count, images) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [user.id, albumId, apiKey, apiName, total, '[]'],  // 不再存储图片列表
+      `INSERT INTO random_apis (user_id, album_id, api_key, api_name, image_count, images, last_synced) 
+       VALUES (?, ?, ?, ?, ?, ?, datetime("now"))`,
+      [user.id, albumId, apiKey, apiName, allImages.length, JSON.stringify(imageUrls)],
       function(err) {
         if (err) {
           return res.status(500).json({ error: '创建API失败' });
@@ -686,7 +666,7 @@ app.post('/api/random-api/create', authMiddleware, apiLimiter, async (req, res) 
             api_key: apiKey,
             api_name: apiName,
             api_url: apiUrl,
-            image_count: total
+            image_count: allImages.length
           }
         });
       }
@@ -815,6 +795,78 @@ function shuffleArray(array) {
   return shuffled;
 }
 
+// 获取相册图片数量（用于快速统计）
+async function fetchAlbumImageCount(lskyHost, token, albumId) {
+  try {
+    const response = await axios.get(`${lskyHost}/api/v1/images`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      },
+      params: {
+        albumId: albumId,
+        per_page: 1,
+        page: 1
+      },
+      proxy: false,
+      maxRedirects: 5,
+      timeout: 5000
+    });
+    
+    return {
+      total: response.data?.data?.total || 0,
+      totalPages: response.data?.data?.last_page || 1
+    };
+  } catch (error) {
+    console.error('获取相册图片数量失败:', error.message);
+    throw error;
+  }
+}
+
+// 获取相册所有图片（用于随机选择）
+async function fetchAllAlbumImages(lskyHost, token, albumId) {
+  try {
+    const allImages = [];
+    let page = 1;
+    let hasMore = true;
+    
+    while (hasMore) {
+      const response = await axios.get(`${lskyHost}/api/v1/images`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        },
+        params: {
+          albumId: albumId,
+          per_page: 100,
+          page: page
+        },
+        proxy: false,
+        maxRedirects: 5,
+        timeout: 10000
+      });
+      
+      const images = response.data?.data?.data || [];
+      allImages.push(...images);
+      
+      // 检查是否还有更多页
+      const currentPage = response.data?.data?.current_page || 1;
+      const lastPage = response.data?.data?.last_page || 1;
+      
+      if (currentPage >= lastPage) {
+        hasMore = false;
+      } else {
+        page++;
+      }
+    }
+    
+    return allImages;
+  } catch (error) {
+    console.error('获取相册图片失败:', error.message);
+    throw error;
+  }
+}
+
 // 随机图片API（支持三种模式）
 app.get('/api/random/:apiKey', async (req, res) => {
   const { apiKey } = req.params;
@@ -843,59 +895,74 @@ app.get('/api/random/:apiKey', async (req, res) => {
     // 解密token
     const token = apiInfo.token_encrypted ? decrypt(apiInfo.token_encrypted) : apiInfo.token;
     
-    // 先获取相册图片总数和信息
-    const response = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Accept': 'application/json'
-      },
-      params: {
-        albumId: apiInfo.album_id,
-        per_page: 1,
-        page: 1
-      },
-      proxy: false,
-      maxRedirects: 5,
-      timeout: 5000
-    });
+    // 从数据库读取图片列表
+    let imageUrls = [];
+    try {
+      imageUrls = JSON.parse(apiInfo.images || '[]');
+    } catch (e) {
+      console.error('解析图片列表失败:', e);
+    }
     
-    const total = response.data?.data?.total || 0;
-    const totalPages = response.data?.data?.last_page || 1;
+    // 如果数据库中没有图片列表，则从兰空API获取并更新数据库
+    if (!imageUrls || imageUrls.length === 0) {
+      console.log(`API ${apiKey} 数据库中没有图片列表，从兰空API获取...`);
+      const allImages = await fetchAllAlbumImages(apiInfo.lsky_host, token, apiInfo.album_id);
+      
+      if (allImages.length === 0) {
+        return res.status(404).json({ error: '相册中没有图片' });
+      }
+      
+      imageUrls = allImages.map(img => img.links.url);
+      
+      // 更新数据库
+      db.run(
+        'UPDATE random_apis SET images = ?, image_count = ?, last_synced = datetime("now") WHERE api_key = ?',
+        [JSON.stringify(imageUrls), imageUrls.length, apiKey],
+        (err) => {
+          if (err) console.error('更新图片列表失败:', err);
+        }
+      );
+    }
+    
+    const total = imageUrls.length;
     
     if (total === 0) {
-      return res.status(404).json({ error: '相册中没有图片' });
+      return res.status(404).json({ error: '没有可用的图片' });
     }
     
     let selectedImage;
-    let selectedPage;
+    let selectedIndex;
     
     if (mode === 1) {
       // 模式1：纯随机（默认）
-      selectedPage = Math.floor(Math.random() * totalPages) + 1;
+      selectedIndex = Math.floor(Math.random() * total);
+      selectedImage = imageUrls[selectedIndex];
       
     } else if (mode === 2) {
       // 模式2：顺序随机（不重复直到全部显示）
       let shownIndices = JSON.parse(apiInfo.shown_indices || '[]');
       
       // 如果已经显示完所有图片，重置
-      if (shownIndices.length >= totalPages) {
+      if (shownIndices.length >= total) {
         shownIndices = [];
         db.run('UPDATE random_apis SET shown_indices = ? WHERE api_key = ?', ['[]', apiKey]);
       }
       
-      // 找出未显示的页码
-      const availablePages = [];
-      for (let i = 1; i <= totalPages; i++) {
+      // 找出未显示的索引
+      const availableIndices = [];
+      for (let i = 0; i < total; i++) {
         if (!shownIndices.includes(i)) {
-          availablePages.push(i);
+          availableIndices.push(i);
         }
       }
       
-      // 从未显示的页码中随机选择
-      selectedPage = availablePages[Math.floor(Math.random() * availablePages.length)];
+      // 从未显示的索引中随机选择
+      const randomAvailableIndex = Math.floor(Math.random() * availableIndices.length);
+      selectedIndex = availableIndices[randomAvailableIndex];
+      selectedImage = imageUrls[selectedIndex];
       
       // 更新已显示列表
-      shownIndices.push(selectedPage);
+      shownIndices.push(selectedIndex);
       db.run('UPDATE random_apis SET shown_indices = ? WHERE api_key = ?', 
         [JSON.stringify(shownIndices), apiKey]);
       
@@ -906,12 +973,12 @@ app.get('/api/random/:apiKey', async (req, res) => {
       
       // 如果没有洗牌顺序或已经走完一轮，重新洗牌
       if (shuffleOrder.length === 0 || shuffleIndex >= shuffleOrder.length) {
-        // 创建页码数组并洗牌
-        const pageArray = [];
-        for (let i = 1; i <= totalPages; i++) {
-          pageArray.push(i);
+        // 创建索引数组并洗牌
+        const indexArray = [];
+        for (let i = 0; i < total; i++) {
+          indexArray.push(i);
         }
-        shuffleOrder = shuffleArray(pageArray);
+        shuffleOrder = shuffleArray(indexArray);
         shuffleIndex = 0;
         
         // 保存洗牌顺序
@@ -919,42 +986,13 @@ app.get('/api/random/:apiKey', async (req, res) => {
           [JSON.stringify(shuffleOrder), apiKey]);
       }
       
-      // 获取当前应该显示的页码
-      selectedPage = shuffleOrder[shuffleIndex];
+      // 获取当前应该显示的索引
+      selectedIndex = shuffleOrder[shuffleIndex];
+      selectedImage = imageUrls[selectedIndex];
       
       // 更新索引位置
       db.run('UPDATE random_apis SET shuffle_index = ? WHERE api_key = ?', 
         [shuffleIndex + 1, apiKey]);
-    }
-    
-    // 获取选定页的图片
-    if (selectedPage === 1) {
-      // 使用已经获取的第一页数据
-      const images = response.data?.data?.data || [];
-      if (images.length > 0) {
-        selectedImage = images[0].links.url;
-      }
-    } else {
-      // 获取指定页的图片
-      const pageResponse = await axios.get(`${apiInfo.lsky_host}/api/v1/images`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        },
-        params: {
-          albumId: apiInfo.album_id,
-          per_page: 1,
-          page: selectedPage
-        },
-        proxy: false,
-        maxRedirects: 5,
-        timeout: 5000
-      });
-      
-      const images = pageResponse.data?.data?.data || [];
-      if (images.length > 0) {
-        selectedImage = images[0].links.url;
-      }
     }
     
     if (!selectedImage) {
@@ -1018,26 +1056,16 @@ app.post('/api/random-api/refresh', authMiddleware, async (req, res) => {
     let failCount = 0;
     
     // 并行更新所有API的数据
-    const updatePromises = apis.map(api => {
-      return axios.get(`${user.lsky_host}/api/v1/images`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        },
-        params: {
-          albumId: api.album_id,
-          per_page: 1
-        },
-        proxy: false,
-        maxRedirects: 5,
-        timeout: 5000
-      }).then(response => {
-        const total = response.data?.data?.total || 0;
+    const updatePromises = apis.map(async api => {
+      try {
+        // 获取所有图片
+        const allImages = await fetchAllAlbumImages(user.lsky_host, token, api.album_id);
+        const imageUrls = allImages.map(img => img.links.url);
         
-        // 更新数据库
+        // 更新数据库，包括图片列表
         db.run(
-          'UPDATE random_apis SET image_count = ?, last_synced = datetime("now") WHERE id = ?',
-          [total, api.id],
+          'UPDATE random_apis SET images = ?, image_count = ?, last_synced = datetime("now") WHERE id = ?',
+          [JSON.stringify(imageUrls), allImages.length, api.id],
           (err) => {
             if (err) {
               console.error(`更新API ${api.id} 数据库失败:`, err);
@@ -1046,12 +1074,12 @@ app.post('/api/random-api/refresh', authMiddleware, async (req, res) => {
         );
         
         successCount++;
-        return { success: true, apiId: api.id, count: total };
-      }).catch(error => {
+        return { success: true, apiId: api.id, count: allImages.length };
+      } catch (error) {
         console.error(`刷新API ${api.id} 失败:`, error.message);
         failCount++;
         return { success: false, apiId: api.id, error: error.message };
-      });
+      }
     });
     
     const results = await Promise.all(updatePromises);
