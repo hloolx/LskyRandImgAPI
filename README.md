@@ -1,5 +1,11 @@
 # 兰空图床随机图片API系统
 
+[![Demo](https://img.shields.io/badge/Demo-在线预览-blue)](https://imgapi.15o.cc/)
+[![GitHub](https://img.shields.io/badge/GitHub-源码-black)](https://github.com/hloolx/LskyRandImgAPI)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+
+> 🎯 **在线预览**: [https://imgapi.15o.cc/](https://imgapi.15o.cc/)
+
 ## 一、项目介绍
 
 ### 功能特性
@@ -26,6 +32,19 @@
 - **相册管理**：`GET /api/albums` - 获取相册列表
 - **API管理**：`POST /api/random-api/create` - 创建随机API
 
+## 项目截图
+
+### 登录界面
+![登录界面](docs/images/dashboard1.png)
+
+### 相册管理
+![相册管理](docs/images/dashboard2.png)
+
+### API管理
+![API管理](docs/images/dashboard3.png)
+
+*管理您的兰空图床相册，一键生成随机图片API*
+
 ## 二、部署方式
 
 ### 环境要求
@@ -36,7 +55,11 @@
 
 #### 1. 克隆项目
 ```bash
+# 从GitHub克隆
+git clone https://github.com/hloolx/LskyRandImgAPI.git
+# 或从cnb.cool克隆
 git clone https://cnb.cool/hloolx/LskyRandImgAPI.git
+
 cd LskyRandImgAPI
 ```
 
