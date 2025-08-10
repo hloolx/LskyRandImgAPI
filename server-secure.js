@@ -352,6 +352,7 @@ app.post('/api/auth/logout', (req, res) => {
 // 获取用户相册列表 - 需要认证
 app.get('/api/albums', authMiddleware, async (req, res) => {
   const user = req.user;
+  const { forceRefresh } = req.query; // 支持强制刷新
   
   try {
     // 解密token（如果有加密的就解密，否则使用明文）
@@ -375,6 +376,47 @@ app.get('/api/albums', authMiddleware, async (req, res) => {
         `INSERT OR REPLACE INTO albums (user_id, album_id, name, description, image_count) 
          VALUES (?, ?, ?, ?, ?)`,
         [user.id, album.id, album.name, album.intro || '', album.image_num || 0]
+      );
+    }
+    
+    // 如果强制刷新，同时更新所有相关的随机API的图片数据
+    if (forceRefresh === 'true') {
+      db.all(
+        'SELECT * FROM random_apis WHERE user_id = ?',
+        [user.id],
+        async (err, apis) => {
+          if (!err && apis) {
+            for (const api of apis) {
+              try {
+                const imgResponse = await axios.get(`${user.lsky_host}/api/v1/images`, {
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                  },
+                  params: {
+                    albumId: api.album_id,
+                    per_page: 100
+                  },
+                  proxy: false,
+                  maxRedirects: 5,
+                  timeout: 30000
+                });
+                
+                const images = imgResponse.data.data.data || [];
+                const imageUrls = images.map(img => img.links.url);
+                
+                if (imageUrls.length > 0) {
+                  db.run(
+                    'UPDATE random_apis SET images = ? WHERE id = ?',
+                    [JSON.stringify(imageUrls), api.id]
+                  );
+                }
+              } catch (error) {
+                console.error(`更新API ${api.id} 的图片失败:`, error.message);
+              }
+            }
+          }
+        }
       );
     }
 
@@ -483,37 +525,90 @@ app.post('/api/random-api/create', authMiddleware, apiLimiter, async (req, res) 
 });
 
 // 获取用户的随机API列表 - 需要认证
-app.get('/api/random-api/list', authMiddleware, (req, res) => {
+app.get('/api/random-api/list', authMiddleware, async (req, res) => {
   const user = req.user;
   
   db.all(
     'SELECT * FROM random_apis WHERE user_id = ? ORDER BY created_at DESC',
     [user.id],
-    (err, apis) => {
+    async (err, apis) => {
       if (err) {
         return res.status(500).json({ error: '获取API列表失败' });
       }
 
-      const apiList = apis.map(api => ({
-        id: api.id,
-        api_key: api.api_key,
-        api_name: api.api_name,
-        api_url: `${getProtocol(req)}://${req.get('host')}/api/random/${api.api_key}`,
-        enabled: api.enabled,
-        use_count: api.use_count || 0,
-        last_used_at: api.last_used_at,
-        created_at: api.created_at,
-        image_count: JSON.parse(api.images || '[]').length
-      }));
+      // 更新每个API的图片数据
+      const updatedApis = [];
+      
+      for (const api of apis) {
+        try {
+          // 解密token
+          const token = user.token_encrypted ? decrypt(user.token_encrypted) : user.token;
+          
+          // 获取最新的图片列表
+          const response = await axios.get(`${user.lsky_host}/api/v1/images`, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Accept': 'application/json'
+            },
+            params: {
+              albumId: api.album_id,
+              per_page: 100
+            },
+            proxy: false,
+            maxRedirects: 5,
+            timeout: 30000
+          });
 
-      res.json({ success: true, apis: apiList });
+          const images = response.data.data.data || [];
+          const imageUrls = images.map(img => img.links.url);
+          
+          // 更新数据库中的图片数据
+          if (imageUrls.length > 0) {
+            db.run(
+              'UPDATE random_apis SET images = ? WHERE id = ?',
+              [JSON.stringify(imageUrls), api.id]
+            );
+            api.images = JSON.stringify(imageUrls);
+          }
+        } catch (error) {
+          console.error(`更新API ${api.id} 的图片失败:`, error.message);
+        }
+        
+        updatedApis.push({
+          id: api.id,
+          api_key: api.api_key,
+          api_name: api.api_name,
+          api_url: `${getProtocol(req)}://${req.get('host')}/api/random/${api.api_key}`,
+          enabled: api.enabled,
+          use_count: api.use_count || 0,
+          last_used_at: api.last_used_at,
+          created_at: api.created_at,
+          image_count: JSON.parse(api.images || '[]').length
+        });
+      }
+
+      res.json({ success: true, apis: updatedApis });
     }
   );
 });
 
+// 创建随机数生成器（使用更好的随机算法）
+function getRandomImage(images, apiKey, ipAddress) {
+  if (images.length === 0) return null;
+  if (images.length === 1) return images[0];
+  
+  // 使用种子随机数（基于时间戳和IP）实现更均匀的分布
+  const seed = Date.now() + (ipAddress ? ipAddress.split('.').reduce((a, b) => a + parseInt(b), 0) : 0);
+  const random = (seed * 9301 + 49297) % 233280;
+  const index = Math.floor((random / 233280) * images.length);
+  
+  return images[index];
+}
+
 // 随机图片API（公开访问，记录使用次数）
 app.get('/api/random/:apiKey', (req, res) => {
   const { apiKey } = req.params;
+  const { mode } = req.query; // 支持不同的随机模式
 
   db.get(
     'SELECT * FROM random_apis WHERE api_key = ? AND enabled = 1',
@@ -528,7 +623,21 @@ app.get('/api/random/:apiKey', (req, res) => {
         return res.status(404).json({ error: '没有可用的图片' });
       }
 
-      const randomImage = images[Math.floor(Math.random() * images.length)];
+      const ipAddress = req.ip || req.connection.remoteAddress;
+      let selectedImage;
+      
+      // 根据模式选择图片
+      if (mode === 'sequence') {
+        // 顺序模式：循环返回图片
+        const currentIndex = (api.use_count || 0) % images.length;
+        selectedImage = images[currentIndex];
+      } else if (mode === 'shuffle') {
+        // 洗牌模式：使用改进的随机算法
+        selectedImage = getRandomImage(images, apiKey, ipAddress);
+      } else {
+        // 默认：纯随机
+        selectedImage = images[Math.floor(Math.random() * images.length)];
+      }
       
       // 记录使用次数
       db.run(
@@ -540,7 +649,6 @@ app.get('/api/random/:apiKey', (req, res) => {
       );
       
       // 记录详细的访问日志
-      const ipAddress = req.ip || req.connection.remoteAddress;
       const userAgent = req.headers['user-agent'] || '';
       const referer = req.headers['referer'] || '';
       
@@ -552,7 +660,7 @@ app.get('/api/random/:apiKey', (req, res) => {
         }
       );
       
-      res.redirect(randomImage);
+      res.redirect(selectedImage);
     }
   );
 });

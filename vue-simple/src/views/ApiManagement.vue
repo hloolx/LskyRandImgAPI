@@ -62,6 +62,28 @@
               {{ api.copied ? '✓ 已复制' : '复制' }}
             </button>
           </div>
+          
+          <!-- 调用方式说明 -->
+          <div class="api-modes">
+            <div class="api-mode-title">📖 调用方式：</div>
+            <div class="api-mode-list">
+              <div class="api-mode-item">
+                <span class="mode-label">默认随机：</span>
+                <code class="mode-code">{{ api.api_url }}</code>
+                <button class="btn-copy-small" @click="copyModeUrl(api.api_url, '默认')" title="复制">📋</button>
+              </div>
+              <div class="api-mode-item">
+                <span class="mode-label">顺序循环：</span>
+                <code class="mode-code">{{ api.api_url }}?mode=sequence</code>
+                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?mode=sequence', '顺序')" title="复制">📋</button>
+              </div>
+              <div class="api-mode-item">
+                <span class="mode-label">均匀随机：</span>
+                <code class="mode-code">{{ api.api_url }}?mode=shuffle</code>
+                <button class="btn-copy-small" @click="copyModeUrl(api.api_url + '?mode=shuffle', '均匀')" title="复制">📋</button>
+              </div>
+            </div>
+          </div>
           <div class="api-meta">
             <div class="api-meta-item">
               <span>🖼️</span> {{ api.image_count }} 张图片
@@ -221,6 +243,15 @@ const copyUrl = async (apiItem) => {
     setTimeout(() => {
       apiItem.copied = false
     }, 3000)
+  } catch (error) {
+    showToast('复制失败，请手动复制', 'error')
+  }
+}
+
+const copyModeUrl = async (url, modeName) => {
+  try {
+    await navigator.clipboard.writeText(url)
+    showToast(`${modeName}模式链接已复制`, 'success')
   } catch (error) {
     showToast('复制失败，请手动复制', 'error')
   }

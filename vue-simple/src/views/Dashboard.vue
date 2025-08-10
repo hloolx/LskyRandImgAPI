@@ -223,7 +223,15 @@ const generateApi = async (album) => {
 
 const refreshData = async () => {
   showToast('正在刷新数据...', 'info')
-  await Promise.all([loadAlbums(), loadApis()])
+  // 强制刷新相册数据，同时更新所有API的图片数据
+  await Promise.all([
+    api.getAlbums(true).then(result => {
+      if (result.success) {
+        albums.value = result.albums
+      }
+    }),
+    loadApis()
+  ])
   showToast('数据已更新', 'success')
 }
 

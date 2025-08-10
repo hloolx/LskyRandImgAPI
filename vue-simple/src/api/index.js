@@ -65,8 +65,10 @@ export const api = {
   },
 
   // 相册管理
-  async getAlbums() {
-    return request.get('/albums')
+  async getAlbums(forceRefresh = false) {
+    return request.get('/albums', {
+      params: { forceRefresh }
+    })
   },
 
   async getAlbumImages(albumId) {
