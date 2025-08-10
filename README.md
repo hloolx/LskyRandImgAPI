@@ -33,24 +33,49 @@
 - npm 6.0+
 
 ### 本地部署
+
+#### 1. 克隆项目
 ```bash
-# 1. 克隆项目
 git clone https://cnb.cool/hloolx/LskyRandImgAPI.git
 cd LskyRandImgAPI
+```
 
-# 2. 一键安装并构建
-npm run setup:build
+#### 2. 安装后端依赖
+```bash
+npm install
+```
 
-# 3. 配置环境变量
-cp .env.example .env          # Linux/Mac
-copy .env.example .env        # Windows
+#### 3. 安装前端依赖
+```bash
+cd vue-simple
+npm install
+```
 
-# 编辑 .env 文件，修改以下必填项：
+#### 4. 构建前端
+```bash
+npm run build
+# 构建完成后会生成 dist 目录
+cd ..
+```
+
+#### 5. 配置环境变量
+```bash
+# Linux/Mac
+cp .env.example .env
+
+# Windows
+copy .env.example .env
+```
+
+编辑 `.env` 文件，修改以下必填项：
+```
 PORT=3000                     # 服务端口
 ENCRYPT_SECRET=随机32位密钥    # 必须修改！
 SESSION_SECRET=随机32位密钥    # 必须修改！
+```
 
-# 4. 启动服务
+#### 6. 启动后端服务
+```bash
 npm start
 ```
 

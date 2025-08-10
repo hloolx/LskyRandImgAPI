@@ -7,15 +7,8 @@
     "start": "node server-secure.js",
     "dev": "nodemon server-secure.js",
     "build": "cd vue-simple && npm run build && cd ..",
-    "setup": "npm install && cd vue-simple && npm install && cd ..",
-    "setup:build": "npm run setup && npm run build",
     "production": "NODE_ENV=production node server-secure.js",
-    "production:win": "set NODE_ENV=production && node server-secure.js",
-    "docker:build": "docker build -t random-image-api .",
-    "docker:run": "docker run -d -p 3000:3000 --name random-image-api random-image-api",
-    "docker:compose": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f"
+    "production:win": "set NODE_ENV=production && node server-secure.js"
   },
   "dependencies": {
     "axios": "^1.6.2",
