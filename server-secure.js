@@ -213,6 +213,17 @@ function generateApiKey() {
   return 'api_' + crypto.randomBytes(16).toString('hex');
 }
 
+// 获取正确的协议（处理反向代理）
+function getProtocol(req) {
+  // 优先使用 X-Forwarded-Proto 头（Nginx反向代理会设置）
+  const forwarded = req.get('X-Forwarded-Proto');
+  if (forwarded) {
+    return forwarded;
+  }
+  // 其次使用标准的协议
+  return req.protocol;
+}
+
 // API路由
 
 // 健康检查端点（用于Docker和负载均衡器）
@@ -451,7 +462,7 @@ app.post('/api/random-api/create', authMiddleware, apiLimiter, async (req, res) 
           return res.status(500).json({ error: '创建API失败' });
         }
         
-        const apiUrl = `${req.protocol}://${req.get('host')}/api/random/${apiKey}`;
+        const apiUrl = `${getProtocol(req)}://${req.get('host')}/api/random/${apiKey}`;
         
         res.json({
           success: true,
@@ -487,7 +498,7 @@ app.get('/api/random-api/list', authMiddleware, (req, res) => {
         id: api.id,
         api_key: api.api_key,
         api_name: api.api_name,
-        api_url: `${req.protocol}://${req.get('host')}/api/random/${api.api_key}`,
+        api_url: `${getProtocol(req)}://${req.get('host')}/api/random/${api.api_key}`,
         enabled: api.enabled,
         use_count: api.use_count || 0,
         last_used_at: api.last_used_at,
