@@ -81,6 +81,74 @@ npm start
 
 访问 `http://localhost:3000` 即可使用！
 
+### 生产环境部署（Nginx配置）
+
+当部署到生产服务器时，需要配置Nginx来正确代理前后端服务。
+
+#### Nginx配置要点
+
+在您的Nginx站点配置文件中，需要添加API反向代理配置。以下是需要添加的关键配置：
+
+```nginx
+# ===== 必须添加的配置 =====
+# API反向代理配置（将前端的/api请求转发到后端服务）
+location /api/ {
+    proxy_pass http://127.0.0.1:3000;  # 注意：末尾不要加斜杠！
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_cache_bypass $http_upgrade;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# ===== 如果已存在以下配置，无需重复添加 =====
+# Vue单页应用路由支持（通常已存在）
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+#### 配置步骤
+
+1. **找到您的Nginx配置文件**
+   - 宝塔面板：网站设置 → 配置文件
+   - 手动部署：通常在 `/etc/nginx/sites-available/` 或 `/www/server/panel/vhost/nginx/`
+
+2. **添加配置的位置**
+   - 在 `server { ... }` 块内
+   - 建议放在其他 `location` 配置之前
+   - 如果使用宝塔，可以放在 `#REWRITE-END` 注释之后
+
+3. **测试并重启Nginx**
+   ```bash
+   # 测试配置是否正确
+   nginx -t
+   
+   # 重新加载配置
+   nginx -s reload
+   # 或
+   systemctl reload nginx
+   ```
+
+#### 常见错误排查
+
+**问题：前端显示 404 (Not Found) 错误**
+- 原因1：未配置API代理
+- 解决：添加上述 `location /api/` 配置块
+- 原因2：proxy_pass末尾错误地加了斜杠
+- 解决：确保 `proxy_pass http://127.0.0.1:3000;` 末尾没有斜杠
+
+**问题：502 Bad Gateway**
+- 原因：后端服务未运行或端口不匹配
+- 解决：确认后端服务运行中，端口与配置一致
+
+**重要提示：proxy_pass路径规则**
+- `proxy_pass http://127.0.0.1:3000;` → 保持原路径 `/api/xxx` → `/api/xxx`
+- `proxy_pass http://127.0.0.1:3000/;` → 替换路径 `/api/xxx` → `/xxx`（错误！）
+
 ### 长期运行后端服务
 
 由于前端已构建为静态文件（dist目录），后端需要持续运行来提供API服务。
