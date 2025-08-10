@@ -25,7 +25,7 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: '../dist',
-      emptyOutDir: true
+      emptyOutDir: false  // 关闭自动清空，避免权限问题
     }
   }
 })

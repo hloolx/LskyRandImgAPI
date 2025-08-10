@@ -42,7 +42,11 @@
       </div>
 
       <!-- API列表 -->
-      <div v-if="apis.length === 0" class="empty-state">
+      <div v-if="apisLoading" class="loading-state">
+        <div class="loading-spinner"></div>
+        <p>正在加载API列表...</p>
+      </div>
+      <div v-else-if="apis.length === 0" class="empty-state">
         <div class="empty-icon">🔗</div>
         <div class="empty-title">暂无 API</div>
         <div class="empty-description">请先从相册生成随机 API</div>
@@ -214,6 +218,7 @@ const currentApiUrl = ref('')
 const showStatsModal = ref(false)
 const currentStats = ref(null)
 const statsLoading = ref(false)
+const apisLoading = ref(false)  // 添加API列表加载状态
 
 const user = computed(() => {
   const userStr = localStorage.getItem('user')
@@ -223,13 +228,21 @@ const user = computed(() => {
 const userInitial = computed(() => user.value?.nickname?.charAt(0).toUpperCase() || 'U')
 
 const loadApis = async () => {
+  apisLoading.value = true
   try {
     const result = await api.getApis()
     if (result.success) {
       apis.value = result.apis.map(item => ({ ...item, copied: false }))
+      console.log(`加载了 ${apis.value.length} 个API（缓存数据）`)
+    } else {
+      console.error('加载API失败:', result)
+      showToast('加载API失败', 'error')
     }
   } catch (error) {
-    showToast('加载API失败', 'error')
+    console.error('加载API请求失败:', error)
+    showToast('加载API失败: ' + (error.message || '网络错误'), 'error')
+  } finally {
+    apisLoading.value = false
   }
 }
 
@@ -365,9 +378,22 @@ const formatDate = (dateString) => {
 }
 
 const refreshApis = async () => {
-  showToast('正在刷新...', 'info')
-  await loadApis()
-  showToast('API列表已更新', 'success')
+  console.log('开始刷新API列表...')
+  showToast('正在刷新数据...', 'info')
+  try {
+    // 调用专门的刷新接口
+    const refreshResult = await api.refreshApis()
+    if (refreshResult.success) {
+      showToast(refreshResult.message || '刷新成功', 'success')
+      // 重新加载列表
+      await loadApis()
+    } else {
+      showToast('刷新失败', 'error')
+    }
+  } catch (error) {
+    console.error('刷新失败:', error)
+    showToast('刷新失败，请重试', 'error')
+  }
 }
 
 const logout = async () => {
@@ -383,7 +409,7 @@ const logout = async () => {
 }
 
 onMounted(() => {
-  loadApis()
+  loadApis()  // 初始加载使用缓存，快速显示
 })
 </script>
 
@@ -508,5 +534,17 @@ onMounted(() => {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* 加载状态样式 */
+.loading-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.loading-state p {
+  margin-top: 20px;
+  font-size: 1.1em;
 }
 </style>

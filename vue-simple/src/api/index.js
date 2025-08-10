@@ -81,7 +81,13 @@ export const api = {
   },
 
   async getApis() {
+    // 不再传递forceRefresh，直接使用缓存
     return request.get('/random-api/list')
+  },
+  
+  async refreshApis() {
+    // 新的刷新接口
+    return request.post('/random-api/refresh')
   },
 
   async toggleApi(apiId, enabled) {
