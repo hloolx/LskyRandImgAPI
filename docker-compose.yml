@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # 随机图片API服务
+  random-image-api:
+    # 使用本地构建
+    build: .
+    # 或者使用预构建镜像（如果发布到Docker Hub）
+    # image: yourusername/random-image-api:latest
+    
+    container_name: random-image-api
+    
+    # 端口映射
+    ports:
+      - "${PORT:-3000}:3000"
+    
+    # 环境变量
+    environment:
+      # 服务器配置
+      PORT: ${PORT:-3000}
+      NODE_ENV: production
+      
+      # 安全配置（请修改为随机值）
+      ENCRYPT_SECRET: ${ENCRYPT_SECRET:-your-unique-encrypt-secret-key-change-this-123456789}
+      SESSION_SECRET: ${SESSION_SECRET:-your-unique-session-secret-key-change-this-987654321}
+      
+      # CORS配置
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      
+      # 限流配置
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-900000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-100}
+    
+    # 数据卷 - 持久化数据库
+    volumes:
+      - ./data:/app/data
+      - ./database.db:/app/database.db
+      # 如果有自定义.env文件，可以挂载
+      # - ./.env:/app/.env:ro
+    
+    # 自动重启
+    restart: unless-stopped
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # 资源限制（可选）
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+# 网络配置（可选）
+networks:
+  default:
+    name: random-image-network
+    driver: bridge
+
+# 数据卷配置（可选）
+volumes:
+  api-data:
+    driver: local
